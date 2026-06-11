@@ -31,27 +31,77 @@ export default function UploadPage() {
   const [fileName, setFileName] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  function handleFakeUpload(event: React.ChangeEvent<HTMLInputElement>) {
+  async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
     if (!file) return;
 
+    if (!title.trim()) {
+      alert("Please enter a meeting title.");
+      return;
+    }
+
     setFileName(file.name);
     setIsProcessing(true);
     setCompletedSteps([]);
+    setErrorMessage("");
 
-    processingSteps.forEach((_, index) => {
+    try {
+      // Step 1: Uploading started
+      setCompletedSteps([0]);
+
+      const formData = new FormData();
+      formData.append("title", title);
+      formData.append("file", file);
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const uploadData = await uploadRes.json();
+
+      if (!uploadRes.ok) {
+        throw new Error(uploadData.error || "Upload failed");
+      }
+
+      // Step 2: Upload complete, processing started
+      setCompletedSteps([0, 1]);
+
+      const processRes = await fetch("/api/process-meeting", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          meetingId: uploadData.meeting.id,
+        }),
+      });
+
+      const processData = await processRes.json();
+
+      if (!processRes.ok) {
+        throw new Error(processData.error || "Processing failed");
+      }
+
+      // Step 3: All complete
+      setCompletedSteps(processingSteps.map((_, index) => index));
+
       setTimeout(() => {
-        setCompletedSteps((current) => [...current, index]);
+        window.location.href = `/meeting/${uploadData.meeting.id}`;
+      }, 700);
+    } catch (error) {
+      console.error(error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while processing the meeting.";
 
-        if (index === processingSteps.length - 1) {
-          setTimeout(() => {
-            window.location.href = "/meeting/demo";
-          }, 900);
-        }
-      }, 800 * (index + 1));
-    });
+      setErrorMessage(message);
+      setIsProcessing(false);
+    }
   }
 
   return (
@@ -128,8 +178,8 @@ export default function UploadPage() {
                 Upload meeting file
               </h2>
               <p className="mt-2 text-sm text-slate-400">
-                For now this is a demo upload flow. Later we will connect
-                Supabase storage and AI processing.
+                Upload a real meeting file. Meeto will save it to Supabase,
+                transcribe it, and generate AI notes.
               </p>
             </div>
 
@@ -141,14 +191,19 @@ export default function UploadPage() {
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="Enter meeting title"
-                className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-violet-400/50"
+                disabled={isProcessing}
+                className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-violet-400/50 disabled:cursor-not-allowed disabled:opacity-60"
               />
             </div>
 
             <div className="mt-5">
               <label
                 htmlFor="meeting-file"
-                className="group flex cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-white/15 bg-white/[0.035] px-6 py-12 text-center transition hover:border-violet-300/40 hover:bg-violet-500/10"
+                className={`group flex flex-col items-center justify-center rounded-[1.5rem] border border-dashed px-6 py-12 text-center transition ${
+                  isProcessing
+                    ? "cursor-not-allowed border-white/10 bg-white/[0.02] opacity-60"
+                    : "cursor-pointer border-white/15 bg-white/[0.035] hover:border-violet-300/40 hover:bg-violet-500/10"
+                }`}
               >
                 <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-500 to-violet-600 shadow-lg shadow-violet-500/20">
                   <UploadCloud className="h-8 w-8 text-white" />
@@ -178,7 +233,8 @@ export default function UploadPage() {
                   type="file"
                   accept=".mp4,.mp3,.wav,.m4a,.webm"
                   className="hidden"
-                  onChange={handleFakeUpload}
+                  onChange={handleUpload}
+                  disabled={isProcessing}
                 />
               </label>
             </div>
@@ -201,6 +257,12 @@ export default function UploadPage() {
                     </p>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {errorMessage && (
+              <div className="mt-5 rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200">
+                {errorMessage}
               </div>
             )}
 
